@@ -1,12 +1,14 @@
 // Base de datos de equipos de la competencia
 // format: 'A4' | 'A3' | 'A3A4' (multiformato → se trata como A3)
+import { extractModelCode, normalizeText, stripNoiseWords, safeIncludes } from './modelMatching'
 
 export interface CompetitorDevice {
   brand: string
   model: string
+  aliases?: string[]
   type: 'mono' | 'color'
   format: 'A4' | 'A3' | 'A3A4'
-  volMonthly: number   // volumen mensual estimado de referencia
+  volMonthly: number
   notes?: string
 }
 
@@ -293,21 +295,46 @@ export const COMPETITOR_DEVICES: CompetitorDevice[] = [
   { brand:'Toshiba', model:'e-STUDIO 2020AC',  type:'mono',  format:'A3A4', volMonthly:15000 },
   { brand:'Toshiba', model:'e-STUDIO 2520AC',  type:'mono',  format:'A3A4', volMonthly:20000 },
   { brand:'Toshiba', model:'e-STUDIO 4020AC',  type:'mono',  format:'A3A4', volMonthly:35000 },
+  
 ]
 
 // Lookup rápido por marca + modelo
 export function findCompetitor(brand: string, model: string): CompetitorDevice | undefined {
-  const b = brand.toLowerCase()
-  const m = model.toLowerCase()
-  return COMPETITOR_DEVICES.find(
-    d => d.brand.toLowerCase() === b && d.model.toLowerCase() === m
+  const brandNorm = normalizeText(brand)
+  const modelNorm = stripNoiseWords(model)
+  const inputCode = extractModelCode(brand, model)
+
+  const candidates = COMPETITOR_DEVICES.filter(
+    d => normalizeText(d.brand) === brandNorm
   )
+
+  // 1. Match por código real del modelo
+  if (inputCode) {
+    const byCode = candidates.find(d => extractModelCode(d.brand, d.model) === inputCode)
+    if (byCode) return byCode
+  }
+
+  // 2. Match exacto normalizado
+  const exact = candidates.find(d => stripNoiseWords(d.model) === modelNorm)
+  if (exact) return exact
+
+  // 3. Match parcial por contención
+  const partial = candidates.find(d => {
+    const dbNorm = stripNoiseWords(d.model)
+    return safeIncludes(dbNorm, modelNorm)
+  })
+  if (partial) return partial
+
+  return undefined
 }
+export const COMPETITOR_BRANDS = Array.from(
+  new Set(COMPETITOR_DEVICES.map(d => d.brand))
+).sort()
 
-// Lista de marcas únicas
-export const COMPETITOR_BRANDS = [...new Set(COMPETITOR_DEVICES.map(d => d.brand))].sort()
-
-// Modelos por marca
 export function getModelsByBrand(brand: string): CompetitorDevice[] {
-  return COMPETITOR_DEVICES.filter(d => d.brand.toLowerCase() === brand.toLowerCase())
+  const b = normalizeText(brand)
+
+  return COMPETITOR_DEVICES.filter(
+    d => normalizeText(d.brand) === b
+  )
 }
